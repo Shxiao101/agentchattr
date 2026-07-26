@@ -254,8 +254,18 @@ class RuntimeRegistry:
         self._save_instances()
         return result
 
-    def deregister(self, name: str) -> dict | None:
+    def deregister(self, name: str, reclaimable: bool = False) -> dict | None:
         """Remove an instance. Name is reserved for GRACE_PERIOD seconds.
+
+        `reclaimable` decides whether the token survives:
+          - True  — sleep / crash-timeout path: keep the instance (and its token)
+            in _reclaimable so a wrapper reconnecting after wake transparently
+            recovers the same identity.
+          - False (default) — a deliberate deregister (wrapper shutdown, explicit
+            /api/deregister): invalidate the token for a clean slate. A later
+            reconnect must re-register. This keeps a deliberate close from
+            silently reviving a dead session — reclaim is only wanted for sleep,
+            not for closing the server or an agent.
 
         Returns result dict with 'ok' and optional '_renamed_back' info,
         or None if instance not found.
@@ -267,7 +277,8 @@ class RuntimeRegistry:
             base = inst_removed.base
             del self._instances[name]
             self._reserved[name] = time.time()
-            self._reclaimable[name] = inst_removed  # keep token recoverable on reconnect
+            if reclaimable:
+                self._reclaimable[name] = inst_removed  # token recoverable on reconnect (sleep)
 
             # If family drops to 1 instance with a numbered name, rename back to base
             renamed_back = None

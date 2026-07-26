@@ -367,7 +367,10 @@ def configure(cfg: dict, session_token: str = ""):
                         last_seen = mcp_bridge._presence.get(name, 0)
                     if last_seen > 0 and now - last_seen > _CRASH_TIMEOUT:
                         log.info(f"Crash timeout: deregistering {name} (no heartbeat for {_CRASH_TIMEOUT}s)")
-                        result = registry.deregister(name)
+                        # Sleep / crash path: keep the token reclaimable so the
+                        # wrapper transparently recovers its identity on wake.
+                        # (A deliberate /api/deregister below stays non-reclaimable.)
+                        result = registry.deregister(name, reclaimable=True)
                         if result:
                             mcp_bridge.purge_identity(name)
                             registry.clean_renames_for(name)

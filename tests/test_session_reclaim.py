@@ -37,17 +37,27 @@ class SessionReclaimTests(unittest.TestCase):
         """Single persistent agent deregistered during sleep recovers via its token."""
         inst = self.reg.register("claude")
         token = inst["token"]
-        self.reg.deregister("claude")          # crash-timeout fires during sleep
+        self.reg.deregister("claude", reclaimable=True)          # crash-timeout fires during sleep
         resolved = self.reg.resolve_token(token)  # same token presented on wake
         self.assertIsNotNone(resolved, "stale token should reactivate, not be rejected")
         self.assertEqual(resolved["name"], "claude")
         self.assertEqual(resolved["state"], "active")
 
+    def test_deliberate_deregister_is_not_reclaimable(self):
+        """A deliberate deregister (default reclaimable=False) is a clean slate:
+        the token dies, so a deliberate close/exit cannot silently revive a dead
+        session. Reclaim is opt-in for the sleep/crash-timeout path only."""
+        inst = self.reg.register("claude")
+        token = inst["token"]
+        self.reg.deregister("claude")            # deliberate close — NOT reclaimable
+        self.assertIsNone(self.reg.resolve_token(token),
+                          "deliberately deregistered token must stay stale, not reactivate")
+
     def test_fresh_registration_supersedes_reclaimable(self):
         """A fresh relaunch (new token) must win; the old token must NOT reactivate."""
         first = self.reg.register("codex")
         old_tok = first["token"]
-        self.reg.deregister("codex")
+        self.reg.deregister("codex", reclaimable=True)
         # The overnight gap is far longer than the 30s name-reservation grace, so the
         # fresh morning relaunch reclaims the canonical 'codex' name (not 'codex-2').
         self.reg._reserved.clear()
@@ -61,7 +71,7 @@ class SessionReclaimTests(unittest.TestCase):
     def test_claim_recovers_reclaimable_identity(self):
         """chat_claim(sender='claude') after deregister recovers the identity."""
         self.reg.register("claude")
-        self.reg.deregister("claude")
+        self.reg.deregister("claude", reclaimable=True)
         result = self.reg.claim("claude")
         self.assertIsInstance(result, dict, f"claim should recover, got: {result!r}")
         self.assertEqual(result["name"], "claude")
@@ -109,7 +119,7 @@ class SessionReclaimTests(unittest.TestCase):
         first = self.reg.register("claude")
         old_tok = first["token"]
         self.reg.claim("claude", "claude-music")     # custom identity, base=claude slot=1
-        self.reg.deregister("claude-music")          # crash-timeout / shutdown -> reclaimable
+        self.reg.deregister("claude-music", reclaimable=True)          # crash-timeout / shutdown -> reclaimable
         self.reg._reserved.clear()                   # overnight gap >> 30s name-reservation grace
         fresh = self.reg.register("claude")          # fresh relaunch of the base
         self.assertEqual(fresh["name"], "claude")
@@ -131,7 +141,7 @@ class SessionReclaimTests(unittest.TestCase):
         """
         self.reg.register("claude")                  # claude (slot 1)
         self.reg.register("claude")                  # -> claude-1 (slot 1) + claude-2 (slot 2)
-        self.reg.deregister("claude-1")              # slot-1 leaves -> reclaimable; claude-2 renamed back to 'claude'
+        self.reg.deregister("claude-1", reclaimable=True)              # slot-1 leaves -> reclaimable; claude-2 renamed back to 'claude'
         self.assertIn("claude", self.reg.get_all_names(), "survivor should be renamed back to canonical 'claude'")
         self.reg.claim("claude-1")                   # stale wrapper tries to recover its old slot-1 identity
         active_slot1 = [n for n, d in self.reg.get_all().items()
@@ -154,7 +164,7 @@ class SessionReclaimTests(unittest.TestCase):
         tok_a = a["token"]
         b = self.reg.register("claude")              # A -> 'claude-1', B = 'claude-2'
         tok_b = b["token"]
-        self.reg.deregister("claude-1")              # A reclaimable@'claude-1'; B renamed back to 'claude'
+        self.reg.deregister("claude-1", reclaimable=True)              # A reclaimable@'claude-1'; B renamed back to 'claude'
         self.reg.register("claude")                  # B -> 'claude-1', C = 'claude-2'; stale A lingers
         reg2 = RuntimeRegistry(data_dir=self.tmp)    # server restart
         reg2.seed({
@@ -180,7 +190,7 @@ class SessionReclaimTests(unittest.TestCase):
         b = self.reg.register("claude")              # A -> 'claude-1', B = 'claude-2'
         tok_b = b["token"]
         self.reg.register("claude")                  # C = 'claude-3'
-        self.reg.deregister("claude-1")              # A reclaimable@'claude-1' (base=claude, slot=1)
+        self.reg.deregister("claude-1", reclaimable=True)              # A reclaimable@'claude-1' (base=claude, slot=1)
         claimed = self.reg.claim("claude-2", "claude")   # B claims canonical 'claude' (base=claude, slot=1)
         self.assertEqual(claimed["name"], "claude")
         reg2 = RuntimeRegistry(data_dir=self.tmp)    # server restart
@@ -205,7 +215,7 @@ class SessionReclaimTests(unittest.TestCase):
         b = self.reg.register("claude")              # A -> 'claude-1', B = 'claude-2'
         tok_b = b["token"]
         self.reg.register("claude")                  # C = 'claude-3'
-        self.reg.deregister("claude-1")              # A reclaimable@'claude-1' (base=claude, slot=1)
+        self.reg.deregister("claude-1", reclaimable=True)              # A reclaimable@'claude-1' (base=claude, slot=1)
         renamed = self.reg.rename("claude-2", "claude")  # B renamed onto canonical 'claude' (base=claude, slot=1)
         self.assertEqual(renamed["name"], "claude")
         reg2 = RuntimeRegistry(data_dir=self.tmp)    # server restart
