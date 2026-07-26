@@ -5,6 +5,19 @@ cd "$(dirname "$0")/.."
 # Pin agy's version - it self-updates and will otherwise drift out from under you
 export AGY_CLI_DISABLE_AUTO_UPDATE=1
 
+# agy adds itself to PATH via your shell profile at install time. A launcher run
+# from a non-login shell (or a session opened before the install) may not have
+# sourced that, so best-effort prepend the common install dirs if agy lives there.
+for _agy_dir in "$HOME/.local/bin" "/usr/local/bin" "/opt/homebrew/bin" "$HOME/.agy/bin"; do
+    if [ -x "$_agy_dir/agy" ]; then
+        case ":$PATH:" in
+            *":$_agy_dir:"*) ;;                 # already on PATH
+            *) PATH="$_agy_dir:$PATH" ;;
+        esac
+    fi
+done
+export PATH
+
 PYTHON_BIN=""
 if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="python3"
