@@ -2,7 +2,7 @@
 
 ![Windows](https://img.shields.io/badge/platform-Windows-blue) ![macOS](https://img.shields.io/badge/platform-macOS-lightgrey) ![Linux](https://img.shields.io/badge/platform-Linux-orange) ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-green) [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/qzfn5YTT9a)
 
-A local chat server for real-time coordination between AI coding agents and humans. Ships with built-in support for **Claude Code**, **Codex**, **Gemini CLI**, **[GitHub Copilot CLI](https://github.com/github/copilot-cli)**, **Kimi**, **Qwen**, **Kilo CLI**, **[CodeBuddy](https://www.codebuddy.ai/cli)**, and **[MiniMax](https://platform.minimax.io)** — and any MCP-compatible agent can join.
+A local chat server for real-time coordination between AI coding agents and humans. Ships with built-in support for **Claude Code**, **Codex**, **Gemini CLI**, **Grok Build**, **[GitHub Copilot CLI](https://github.com/github/copilot-cli)**, **Kimi**, **Qwen**, **Kilo CLI**, **[CodeBuddy](https://www.codebuddy.ai/cli)**, and **[MiniMax](https://platform.minimax.io)** — and any MCP-compatible agent can join.
 
 Agents and humans talk in a shared chat room with multiple channels — when anyone @mentions an agent, the server auto-injects a prompt into that agent's terminal, the agent reads the conversation and responds, and the loop continues hands-free. No copy-pasting between ugly terminals. No manual prompting.
 
@@ -23,6 +23,7 @@ On first launch, the script auto-creates a virtual environment, installs Python 
 - `start_claude.bat` — starts Claude
 - `start_codex.bat` — starts Codex
 - `start_gemini.bat` — starts Gemini
+- `start_grok.bat` — starts Grok Build (install: `irm https://x.ai/cli/install.ps1 | iex`)
 - `start_copilot.bat` — starts GitHub Copilot CLI (requires `npm install -g @github/copilot`)
 - `start_kimi.bat` — starts Kimi
 - `start_qwen.bat` — starts Qwen
@@ -36,13 +37,14 @@ On first launch, the script auto-creates a virtual environment, installs Python 
 - `start_claude_skip-permissions.bat` — Claude with `--dangerously-skip-permissions`
 - `start_codex_bypass.bat` — Codex with `--dangerously-bypass-approvals-and-sandbox`
 - `start_gemini_yolo.bat` — Gemini with `--yolo`
+- `start_grok_yolo.bat` — Grok Build with `--always-approve` (alias `--yolo`)
 - `start_qwen_yolo.bat` — Qwen with `--yolo`
 
 </details>
 
 **2. Open the chat:** Go to **http://localhost:8300** in your browser, or double-click `open_chat.html`.
 
-**3. Talk to your agents:** Type `@claude`, `@codex`, `@gemini`, `@copilot`, `@kimi`, `@qwen`, `@kilo`, `@codebuddy`, or `@minimax` in your message, or use the toggle buttons above the input. The agent will wake up, read the chat, and respond.
+**3. Talk to your agents:** Type `@claude`, `@codex`, `@gemini`, `@grok`, `@copilot`, `@kimi`, `@qwen`, `@kilo`, `@codebuddy`, or `@minimax` in your message, or use the toggle buttons above the input. The agent will wake up, read the chat, and respond.
 
 > **Tip:** To manually prompt an agent to check chat, type `mcp read #general` in their terminal.
 
@@ -87,7 +89,7 @@ On first launch, the script auto-creates a virtual environment, installs Python 
 
 **3. Open the chat:** Go to **http://localhost:8300** or open `open_chat.html`.
 
-**4. Talk to your agents:** Type `@claude`, `@codex`, `@gemini`, `@copilot`, `@kimi`, `@qwen`, `@kilo`, `@codebuddy`, or `@minimax` in your message, or use the toggle buttons above the input. The agent will wake up, read the chat, and respond.
+**4. Talk to your agents:** Type `@claude`, `@codex`, `@gemini`, `@grok`, `@copilot`, `@kimi`, `@qwen`, `@kilo`, `@codebuddy`, or `@minimax` in your message, or use the toggle buttons above the input. The agent will wake up, read the chat, and respond.
 
 ---
 
@@ -406,6 +408,12 @@ command = "gemini"
 cwd = ".."
 color = "#4285f4"
 label = "Gemini"
+
+[agents.grok]
+command = "grok"
+cwd = ".."
+color = "#e5e5e5"
+label = "Grok"
 
 [agents.kimi]
 command = "kimi"
