@@ -26,9 +26,9 @@ color = "#4285f4"
 label = "Gemini"
 
 # Grok Build CLI — native MCP in project .grok/config.toml as
-# [mcp_servers.agentchattr] with url + bearer header. Grok skips
-# Claude/Cursor .mcp.json once the import marker is set, so we do
-# not use that compat path. Official Windows install:
+# [mcp_servers.agentchattr] with url + bearer_token_env_var.
+# Grok skips Claude/Cursor .mcp.json once the import marker is set.
+# Windows launchers only (start_grok.bat). Official install:
 #   irm https://x.ai/cli/install.ps1 | iex
 # → %USERPROFILE%\.grok\bin
 [agents.grok]
@@ -36,9 +36,6 @@ command = "grok"
 cwd = ".."
 color = "#e5e5e5"
 label = "Grok"
-mcp_inject = "settings_file"
-mcp_settings_path = ".grok/config.toml"
-mcp_transport = "http"
 
 # Antigravity CLI (agy) — Google's agentic CLI, successor to the deprecated
 # Gemini CLI. It reads MCP servers from ~/.gemini/config/mcp_config.json (a

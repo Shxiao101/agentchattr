@@ -16,7 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from wrapper import _write_grok_mcp_toml, _write_json_mcp_settings  # noqa: E402
+from wrapper import (  # noqa: E402
+    GROK_MCP_TOKEN_ENV,
+    _build_provider_launch,
+    _write_grok_mcp_toml,
+    _write_json_mcp_settings,
+)
 
 
 class JsonMcpSettingsTests(unittest.TestCase):
@@ -109,22 +114,24 @@ class ExpanduserPathTests(unittest.TestCase):
 
 
 class GrokTomlMcpSettingsTests(unittest.TestCase):
-    """Grok-native TOML writer: merge-only [mcp_servers.agentchattr]."""
+    """Grok-native TOML writer: merge-only [mcp_servers.agentchattr], env-var auth."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.target = Path(self.tmp.name) / ".grok" / "config.toml"
 
-    def test_writes_url_enabled_and_bearer_header(self):
-        token = "live-token-" + os.urandom(4).hex()
+    def test_writes_url_enabled_and_bearer_env_var(self):
         url = "http://127.0.0.1:8244/mcp"
-        path = _write_grok_mcp_toml(self.target, url, token=token)
-        payload = tomllib.loads(path.read_text("utf-8"))
+        path = _write_grok_mcp_toml(self.target, url)
+        text = path.read_text("utf-8")
+        payload = tomllib.loads(text)
         server = payload["mcp_servers"]["agentchattr"]
         self.assertEqual(server["url"], url)
         self.assertTrue(server["enabled"])
-        self.assertEqual(server["headers"]["Authorization"], f"Bearer {token}")
+        self.assertEqual(server["bearer_token_env_var"], GROK_MCP_TOKEN_ENV)
+        self.assertNotIn("headers", server)
+        self.assertNotIn("Bearer ", text)
 
     def test_merge_preserves_unrelated_mcp_servers(self):
         self.target.parent.mkdir(parents=True)
@@ -135,7 +142,7 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
             "enabled = true\n",
             "utf-8",
         )
-        _write_grok_mcp_toml(self.target, "http://127.0.0.1:8244/mcp", token="abc")
+        _write_grok_mcp_toml(self.target, "http://127.0.0.1:8244/mcp")
         text = self.target.read_text("utf-8")
         self.assertIn("keep this comment", text)
         payload = tomllib.loads(text)
@@ -149,14 +156,39 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
         )
 
     def test_rewrite_replaces_only_agentchattr_block(self):
-        _write_grok_mcp_toml(self.target, "http://127.0.0.1:1111/mcp", token="old")
-        _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp", token="new")
+        _write_grok_mcp_toml(self.target, "http://127.0.0.1:1111/mcp")
+        _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
         payload = tomllib.loads(self.target.read_text("utf-8"))
         server = payload["mcp_servers"]["agentchattr"]
         self.assertEqual(server["url"], "http://127.0.0.1:2222/mcp")
-        self.assertEqual(server["headers"]["Authorization"], "Bearer new")
-        # A single agentchattr table, not stacked duplicates
+        self.assertEqual(server["bearer_token_env_var"], GROK_MCP_TOKEN_ENV)
         self.assertEqual(list(payload["mcp_servers"]), ["agentchattr"])
+
+    def test_generic_settings_file_toml_is_not_grok_writer(self):
+        """A custom settings_file path ending in .toml must stay JSON, not Grok TOML."""
+        target = Path(self.tmp.name) / "custom.toml"
+        token = "secret-token-not-for-disk-shape"
+        _, _, _, settings_path = _build_provider_launch(
+            agent="customcli",
+            agent_cfg={
+                "mcp_inject": "settings_file",
+                "mcp_settings_path": str(target),
+                "mcp_transport": "http",
+                "mcp_http_key": "url",
+            },
+            instance_name="customcli-1",
+            data_dir=Path(self.tmp.name),
+            proxy_url=None,
+            extra_args=[],
+            env={},
+            token=token,
+            mcp_cfg={"http_port": 8244},
+        )
+        raw = settings_path.read_text("utf-8")
+        data = json.loads(raw)
+        self.assertIn("mcpServers", data)
+        self.assertNotIn("[mcp_servers.agentchattr]", raw)
+        self.assertNotIn("bearer_token_env_var", raw)
 
 
 if __name__ == "__main__":

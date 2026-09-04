@@ -277,7 +277,7 @@ class WrapperLaunchTests(unittest.TestCase):
         self.assertIn("PATH", env)
 
     def test_build_provider_launch_for_grok_writes_native_toml_mcp(self):
-        """Grok uses official [mcp_servers.agentchattr] TOML, not .mcp.json compat."""
+        """Grok uses official [mcp_servers.agentchattr] TOML with env-var auth."""
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp) / "project"
             grok_cfg = project_dir / ".grok" / "config.toml"
@@ -306,21 +306,17 @@ class WrapperLaunchTests(unittest.TestCase):
             self.assertIsNotNone(settings_path)
             self.assertTrue(settings_path.exists())
             self.assertEqual(settings_path, grok_cfg)
-            payload = tomllib.loads(settings_path.read_text("utf-8"))
+            text = settings_path.read_text("utf-8")
+            self.assertNotIn(token, text)
+            payload = tomllib.loads(text)
             server = payload["mcp_servers"]["agentchattr"]
             self.assertEqual(server["url"], f"http://127.0.0.1:{port}/mcp")
             self.assertTrue(server["enabled"])
-            header_auth = (server.get("headers") or {}).get("Authorization", "")
             env_var = server.get("bearer_token_env_var")
-            self.assertTrue(
-                header_auth == f"Bearer {token}"
-                or (
-                    env_var
-                    and (inject_env.get(env_var) or env.get(env_var)) == token
-                ),
-                f"bearer token missing from Grok MCP payload: {server}",
-            )
-            # Merge-only: unrelated servers kept
+            self.assertTrue(env_var, f"bearer_token_env_var missing: {server}")
+            self.assertNotIn("headers", server)
+            self.assertEqual(inject_env.get(env_var), token)
+            self.assertNotEqual(env.get(env_var), token)
             self.assertEqual(
                 payload["mcp_servers"]["other"]["url"],
                 "http://127.0.0.1:9999/mcp",
@@ -331,56 +327,26 @@ class WrapperLaunchTests(unittest.TestCase):
     def test_committed_config_registers_grok_cli(self):
         config = config_loader.load_config(ROOT)
         self.assertIn("grok", config["agents"])
-        self.assertEqual(config["agents"]["grok"]["command"], "grok")
+        grok = config["agents"]["grok"]
+        self.assertEqual(grok["command"], "grok")
+        self.assertNotIn("mcp_inject", grok)
+        self.assertNotIn("mcp_settings_path", grok)
+        self.assertNotIn("mcp_transport", grok)
 
     def test_mcp_identity_maps_grok_build_to_base_grok(self):
         text = mcp_bridge._MCP_INSTRUCTIONS
         self.assertIn("Grok Build", text)
         self.assertIn('base: "grok"', text)
 
-    def test_chat_js_registers_grok_brand_avatar(self):
-        text = (ROOT / "static" / "chat.js").read_text("utf-8")
-        html = (ROOT / "static" / "index.html").read_text("utf-8")
-        mark = (ROOT / "static" / "avatars" / "grok.svg").read_text("utf-8")
-        self.assertIn("const BRAND_AVATARS = {", text)
-        self.assertIn("/static/avatars/grok.svg", text)
-        # Current official Grok app mark from grok.com/images/favicon.svg
-        self.assertIn("Official Grok app icon from https://grok.com/images/favicon.svg", mark)
-        self.assertIn('fill="#050505"', mark)
-        self.assertIn("M210.484 312.759L343.465 210.383", mark)
-        self.assertIn("chat.js?v=270", html)
+    def test_grok_wrapper_does_not_mutate_folder_trust(self):
+        src = Path(wrapper.__file__).read_text("utf-8")
+        self.assertNotIn("_ensure_grok_folder_trusted", src)
+        self.assertNotIn("trusted_folders.toml", src)
+        self.assertFalse(hasattr(wrapper, "_ensure_grok_folder_trusted"))
 
-    def test_windows_grok_launcher_finds_official_bin_and_runs_wrapper(self):
-        text = (ROOT / "windows" / "start_grok.bat").read_text("utf-8")
-        self.assertIn("wrapper.py grok", text)
-        self.assertIn(r"%USERPROFILE%\.grok\bin", text)
-        self.assertIn("where grok", text)
-
-    def test_windows_grok_yolo_launcher_passes_always_approve(self):
-        text = (ROOT / "windows" / "start_grok_yolo.bat").read_text("utf-8")
-        self.assertIn("wrapper.py grok", text)
-        self.assertIn(r"%USERPROFILE%\.grok\bin", text)
-        self.assertTrue(
-            "--always-approve" in text or "--yolo" in text,
-            "auto-approve launcher must pass --always-approve or --yolo",
-        )
-
-    def test_windows_grok_launchers_use_crlf_for_cmd(self):
-        """cmd.exe cannot parse LF-only .bat files (labels/REM split, window closes)."""
-        for name in ("start_grok.bat", "start_grok_yolo.bat"):
-            raw = (ROOT / "windows" / name).read_bytes()
-            self.assertIn(b"\r\n", raw, f"{name} must use CRLF line endings")
-            self.assertNotIn(
-                b"\n",
-                raw.replace(b"\r\n", b""),
-                f"{name} has LF-only newlines; cmd.exe will not run it",
-            )
-            text = raw.decode("ascii")
-            self.assertIn(
-                "^(PowerShell^)",
-                text,
-                f"{name} must escape parentheses inside if (...) blocks",
-            )
+    def test_no_unix_grok_launcher(self):
+        self.assertFalse((ROOT / "macos-linux" / "start_grok.sh").exists())
+        self.assertFalse((ROOT / "macos-linux" / "start_grok_yolo.sh").exists())
 
 
 class WrapperUnixLifecycleTests(unittest.TestCase):

@@ -25,7 +25,6 @@ import shutil
 import sys
 import threading
 import time
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -113,13 +112,21 @@ def _strip_toml_tables(text: str, table_name: str) -> str:
     return "".join(out).rstrip()
 
 
-def _write_grok_mcp_toml(config_file: Path, url: str, *, token: str = "") -> Path:
+GROK_MCP_TOKEN_ENV = "AGENTCHATTR_MCP_TOKEN"
+
+
+def _write_grok_mcp_toml(
+    config_file: Path,
+    url: str,
+    *,
+    token_env_var: str = GROK_MCP_TOKEN_ENV,
+) -> Path:
     """Write/merge Grok-native [mcp_servers.agentchattr] into a TOML config.
 
-    Official Grok load path is project `.grok/config.toml` (or user
-    `~/.grok/config.toml`). Only the agentchattr server block is replaced;
-    unrelated [mcp_servers.*] tables are preserved. Shape matches Grok's
-    HTTP MCP docs: url + enabled + headers.Authorization bearer token.
+    Official Grok load path is project `.grok/config.toml`. Only the
+    agentchattr server block is replaced; unrelated [mcp_servers.*] tables
+    are preserved. Auth is Grok's bearer_token_env_var (no live token in
+    the file). The wrapper puts the instance token in inject_env.
     """
     config_file.parent.mkdir(parents=True, exist_ok=True)
     existing = ""
@@ -133,11 +140,8 @@ def _write_grok_mcp_toml(config_file: Path, url: str, *, token: str = "") -> Pat
         f"[mcp_servers.{SERVER_NAME}]",
         f'url = "{_toml_escape(url)}"',
         "enabled = true",
+        f'bearer_token_env_var = "{_toml_escape(token_env_var)}"',
     ]
-    if token:
-        lines.append(
-            f'headers = {{ "Authorization" = "Bearer {_toml_escape(token)}" }}'
-        )
     block = "\n".join(lines) + "\n"
     text = (body + "\n\n" + block) if body else block
     config_file.write_text(text, "utf-8")
@@ -223,14 +227,17 @@ _BUILTIN_DEFAULTS: dict[str, dict] = {
     "grok": {
         # Grok-native TOML: [mcp_servers.agentchattr] in project .grok/config.toml.
         # Grok skips .mcp.json once the Claude import marker is set, so we do
-        # not use Claude/Cursor compat files.
-        "mcp_inject": "settings_file",
+        # not use Claude/Cursor compat files. Dedicated inject mode — do not
+        # infer this from a generic settings_file .toml suffix.
+        "mcp_inject": "grok_toml",
         "mcp_settings_path": ".grok/config.toml",
         "mcp_transport": "http",
     },
 }
 
-_VALID_INJECT_MODES = {"settings_file", "env", "flag", "proxy_flag", "env_content"}
+_VALID_INJECT_MODES = {
+    "settings_file", "env", "flag", "proxy_flag", "env_content", "grok_toml",
+}
 
 
 def _resolve_mcp_inject(agent: str, agent_cfg: dict) -> dict:
@@ -294,12 +301,9 @@ def _apply_mcp_inject(
         if not target.is_absolute():
             base = Path(project_dir) if project_dir else Path.cwd()
             target = base / target
-        if target.suffix.lower() == ".toml":
-            settings_path = _write_grok_mcp_toml(target, server_url, token=token)
-        else:
-            settings_path = _write_json_mcp_settings(target, server_url,
-                                                      transport=transport, token=token,
-                                                      http_key=http_key)
+        settings_path = _write_json_mcp_settings(target, server_url,
+                                                  transport=transport, token=token,
+                                                  http_key=http_key)
         # Optionally set an env var pointing to the settings file
         env_var = inject_cfg.get("mcp_env_var")
         if env_var:
@@ -350,6 +354,21 @@ def _apply_mcp_inject(
             server_url, token=token, project_servers=project_servers,
         )
         launch_args = [flag, str(settings_path)]
+
+    elif mode == "grok_toml":
+        # Grok-native project .grok/config.toml. Auth is bearer_token_env_var;
+        # the live token stays in inject_env, not in the file.
+        raw_path = inject_cfg.get("mcp_settings_path", ".grok/config.toml")
+        target = Path(raw_path).expanduser()
+        if not target.is_absolute():
+            base = Path(project_dir) if project_dir else Path.cwd()
+            target = base / target
+        token_env = inject_cfg.get("mcp_token_env_var", GROK_MCP_TOKEN_ENV)
+        settings_path = _write_grok_mcp_toml(
+            target, server_url, token_env_var=token_env,
+        )
+        if token:
+            inject_env[token_env] = token
 
     elif mode == "env_content":
         # Build JSON config content and set it as an env var directly (no file written).
@@ -405,51 +424,6 @@ def _ensure_gemini_folder_trusted(project_dir: Path) -> None:
         print(f"  Trusted folder for Gemini MCPs: {folder_key}")
     except Exception as exc:
         print(f"  Warning: could not update Gemini trusted folders: {exc}")
-
-
-def _ensure_grok_folder_trusted(project_dir: Path) -> None:
-    """Record project_dir in ~/.grok/trusted_folders.toml so project MCP loads.
-
-    Grok gates repo-local MCP (project `.grok/config.toml`) on folder trust.
-    Without an entry, inspect/TUI can list the server as untrusted/disabled
-    even though the native TOML block is correct. Same role as Gemini's
-    trustedFolders.json helper. `--trust` on the CLI is the equivalent flag.
-    """
-    trusted_file = Path.home() / ".grok" / "trusted_folders.toml"
-    folder_key = str(project_dir.resolve())
-    try:
-        existing = ""
-        data: dict = {}
-        if trusted_file.exists():
-            existing = trusted_file.read_text("utf-8")
-            try:
-                data = tomllib.loads(existing)
-            except Exception:
-                data = {}
-        folders = data.get("folders") or {}
-        entry = folders.get(folder_key) or {}
-        if entry.get("trusted") is True:
-            return
-
-        quoted = "'" + folder_key.replace("'", "''") + "'"
-        table = f"[folders.{quoted}]"
-        # Drop a prior untrusted/stale table for this path so we don't emit
-        # duplicate TOML keys, then append a trusted entry.
-        body = _strip_toml_tables(existing, f"folders.{quoted}")
-        if not body:
-            # Also try the unquoted / raw-key form tomllib round-trips to.
-            body = _strip_toml_tables(existing, f"folders.{folder_key}")
-        block = (
-            f"{table}\n"
-            f"trusted = true\n"
-            f"decided_at = {int(time.time())}\n"
-        )
-        text = (body + "\n\n" + block) if body else block
-        trusted_file.parent.mkdir(parents=True, exist_ok=True)
-        trusted_file.write_text(text, "utf-8")
-        print(f"  Trusted folder for Grok MCPs: {folder_key}")
-    except Exception as exc:
-        print(f"  Warning: could not update Grok trusted folders: {exc}")
 
 
 def _build_provider_launch(
@@ -835,9 +809,6 @@ def main():
     # Gemini blocks ALL MCPs for untrusted folders — even system-settings ones.
     if agent == "gemini" or inject_cfg.get("mcp_inject") == "env":
         _ensure_gemini_folder_trusted(project_dir)
-    # Grok: project `.grok/config.toml` MCP is gated on folder trust.
-    if agent == "grok":
-        _ensure_grok_folder_trusted(project_dir)
 
     launch_args, env, inject_env, mcp_settings_path = _build_provider_launch(
         agent=agent,
