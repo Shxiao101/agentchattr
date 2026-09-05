@@ -28,9 +28,9 @@ label = "Gemini"
 # Grok Build CLI — native MCP in project .grok/config.toml as
 # [mcp_servers.agentchattr] with url + bearer_token_env_var.
 # Grok skips Claude/Cursor .mcp.json once the import marker is set.
-# Windows launchers only (start_grok.bat). Official install:
-#   irm https://x.ai/cli/install.ps1 | iex
-# → %USERPROFILE%\.grok\bin
+# Launchers: start_grok.bat (Windows) / start_grok.sh (Mac/Linux). Official install:
+#   Windows:   irm https://x.ai/cli/install.ps1 | iex   → %USERPROFILE%\.grok\bin
+#   Mac/Linux: curl -fsSL https://x.ai/cli/install.sh | bash
 [agents.grok]
 command = "grok"
 cwd = ".."

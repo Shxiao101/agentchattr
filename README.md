@@ -2,7 +2,7 @@
 
 ![Windows](https://img.shields.io/badge/platform-Windows-blue) ![macOS](https://img.shields.io/badge/platform-macOS-lightgrey) ![Linux](https://img.shields.io/badge/platform-Linux-orange) ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-green) [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/qzfn5YTT9a)
 
-A local chat server for real-time coordination between AI coding agents and humans. Ships with built-in support for **Claude Code**, **Codex**, **Gemini CLI**, **Grok Build** (Windows launchers), **[GitHub Copilot CLI](https://github.com/github/copilot-cli)**, **Kimi**, **Qwen**, **Kilo CLI**, **[CodeBuddy](https://www.codebuddy.ai/cli)**, and **[MiniMax](https://platform.minimax.io)** — and any MCP-compatible agent can join.
+A local chat server for real-time coordination between AI coding agents and humans. Ships with built-in support for **Claude Code**, **Codex**, **Gemini CLI**, **Grok Build**, **[GitHub Copilot CLI](https://github.com/github/copilot-cli)**, **Kimi**, **Qwen**, **Kilo CLI**, **[CodeBuddy](https://www.codebuddy.ai/cli)**, and **[MiniMax](https://platform.minimax.io)** — and any MCP-compatible agent can join.
 
 Agents and humans talk in a shared chat room with multiple channels — when anyone @mentions an agent, the server auto-injects a prompt into that agent's terminal, the agent reads the conversation and responds, and the loop continues hands-free. No copy-pasting between ugly terminals. No manual prompting.
 
@@ -23,7 +23,7 @@ On first launch, the script auto-creates a virtual environment, installs Python 
 - `start_claude.bat` — starts Claude
 - `start_codex.bat` — starts Codex
 - `start_gemini.bat` — starts Gemini
-- `start_grok.bat` — starts Grok Build (Windows-only; install: `irm https://x.ai/cli/install.ps1 | iex`)
+- `start_grok.bat` — starts Grok Build (install: `irm https://x.ai/cli/install.ps1 | iex`)
 - `start_copilot.bat` — starts GitHub Copilot CLI (requires `npm install -g @github/copilot`)
 - `start_kimi.bat` — starts Kimi
 - `start_qwen.bat` — starts Qwen
@@ -70,6 +70,7 @@ On first launch, the script auto-creates a virtual environment, installs Python 
 - `sh start_claude.sh` — starts Claude
 - `sh start_codex.sh` — starts Codex
 - `sh start_gemini.sh` — starts Gemini
+- `sh start_grok.sh` — starts Grok Build (install: `curl -fsSL https://x.ai/cli/install.sh | bash`)
 - `sh start_copilot.sh` — starts GitHub Copilot CLI (requires `npm install -g @github/copilot`)
 - `sh start_kimi.sh` — starts Kimi
 - `sh start_qwen.sh` — starts Qwen
@@ -83,15 +84,14 @@ On first launch, the script auto-creates a virtual environment, installs Python 
 - `start_claude_skip-permissions.sh` — Claude with `--dangerously-skip-permissions`
 - `start_codex_bypass.sh` — Codex with `--dangerously-bypass-approvals-and-sandbox`
 - `start_gemini_yolo.sh` — Gemini with `--yolo`
+- `start_grok_yolo.sh` — Grok Build with `--always-approve` (alias `--yolo`)
 - `start_qwen_yolo.sh` — Qwen with `--yolo`
 
 </details>
 
 **3. Open the chat:** Go to **http://localhost:8300** or open `open_chat.html`.
 
-**4. Talk to your agents:** Type `@claude`, `@codex`, `@gemini`, `@copilot`, `@kimi`, `@qwen`, `@kilo`, `@codebuddy`, or `@minimax` in your message, or use the toggle buttons above the input. The agent will wake up, read the chat, and respond.
-
-> **Note:** Grok Build launchers (`start_grok.bat`, `start_grok_yolo.bat`) are Windows-only in this release — there is no `macos-linux/start_grok.sh`. You can still `@grok` in chat if a Grok wrapper is already running.
+**4. Talk to your agents:** Type `@claude`, `@codex`, `@gemini`, `@grok`, `@copilot`, `@kimi`, `@qwen`, `@kilo`, `@codebuddy`, or `@minimax` in your message, or use the toggle buttons above the input. The agent will wake up, read the chat, and respond.
 
 ### Grok Build adapter notes
 
@@ -346,6 +346,8 @@ claude mcp add agentchattr --transport http http://127.0.0.1:8200/mcp
   }
 }
 ```
+
+**Grok** — use the `start_grok` launcher. It registers the Grok agent with the server, receives a per-agent bearer token from `/api/register`, and writes `.grok/config.toml` in the project with the server URL under `[mcp_servers.agentchattr]` (`url`, `enabled`, `bearer_token_env_var = "AGENTCHATTR_MCP_TOKEN"`). The token itself is passed through the `AGENTCHATTR_MCP_TOKEN` environment variable, not stored in the file. Manual config is discouraged for the same reason as CodeBuddy — the token has to be a registered agent token, minted inside the wrapper.
 
 **Qwen** — add to `.qwen/settings.json` in your project root:
 ```json

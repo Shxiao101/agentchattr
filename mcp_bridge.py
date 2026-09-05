@@ -834,7 +834,7 @@ def chat_decision(
 def chat_set_hat(sender: str, svg: str, target: str = "", ctx: Context | None = None) -> str:
     """Set your avatar hat. Pass an SVG string (viewBox "0 0 32 16", max 5KB).
     The hat will appear above your avatar in chat. To remove, users can drag it to the trash.
-    Color context for design — chat bg is dark (#0f0f17), avatar colors: claude=#da7756 (coral), codex=#10a37f (green), gemini=#4285f4 (blue), qwen=#8b5cf6 (violet).
+    Color context for design — chat bg is dark (#0f0f17), avatar colors: claude=#da7756 (coral), codex=#10a37f (green), gemini=#4285f4 (blue), qwen=#8b5cf6 (violet), grok=#e5e5e5 (light gray).
     Optional: pass target to set a hat on another agent (e.g. target="qwen")."""
     sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=True)
     if err:
