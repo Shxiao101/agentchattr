@@ -3,6 +3,19 @@
 # Passes Grok's official --always-approve (alias --yolo) through to the CLI.
 cd "$(dirname "$0")/.."
 
+# grok's installer drops the binary in $GROK_BIN_DIR (default ~/.grok/bin) and
+# adds it to PATH via your shell profile. A launcher run from a non-login shell
+# (or a session opened before the install) may not have sourced that, so
+# best-effort prepend the install dir if grok lives there.
+_grok_bin="${GROK_BIN_DIR:-$HOME/.grok/bin}"
+if [ -x "$_grok_bin/grok" ]; then
+    case ":$PATH:" in
+        *":$_grok_bin:"*) ;;            # already on PATH
+        *) PATH="$_grok_bin:$PATH" ;;
+    esac
+fi
+export PATH
+
 PYTHON_BIN=""
 if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="python3"
