@@ -102,6 +102,7 @@ def _write_grok_mcp_toml(config_file: Path, url: str) -> Path:
     Existing files are parsed with tomlkit so dotted/spaced/quoted table
     headers round-trip as the same key. Unreadable or invalid TOML is not
     treated as empty (that would wipe the file and append a duplicate).
+    A present mcp_servers that is not a table is refused, not replaced.
     """
     config_file.parent.mkdir(parents=True, exist_ok=True)
     if config_file.exists():
@@ -116,9 +117,14 @@ def _write_grok_mcp_toml(config_file: Path, url: str) -> Path:
         doc = tomlkit.document()
 
     servers = doc.get("mcp_servers")
-    if not isinstance(servers, dict):
+    if servers is None:
         servers = tomlkit.table()
         doc["mcp_servers"] = servers
+    elif not isinstance(servers, dict):
+        raise ValueError(
+            f"Refusing to overwrite mcp_servers in {config_file}: "
+            f"expected a table, got {type(servers).__name__}"
+        )
 
     entry = tomlkit.table()
     entry["url"] = url

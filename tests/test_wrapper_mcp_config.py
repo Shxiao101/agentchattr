@@ -190,6 +190,15 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
             _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
         self.assertEqual(self.target.read_text("utf-8"), garbage)
 
+    def test_non_table_mcp_servers_is_not_overwritten(self):
+        self.target.parent.mkdir(parents=True)
+        original = 'mcp_servers = "keep-me"\n'
+        self.target.write_text(original, "utf-8")
+        with self.assertRaises(ValueError) as cm:
+            _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
+        self.assertIn("mcp_servers", str(cm.exception))
+        self.assertEqual(self.target.read_text("utf-8"), original)
+
     def test_concurrent_writes_do_not_share_temp_file(self):
         self.target.parent.mkdir(parents=True)
         errors: list[BaseException] = []
