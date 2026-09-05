@@ -716,7 +716,6 @@ main#timeline {
     align-items: center;
     justify-content: center;
     margin-top: 2px;
-    overflow: hidden;
     box-shadow: 0 0 8px color-mix(in srgb, var(--bubble-color, currentColor) 12%, transparent);
 }
 
@@ -2723,7 +2722,6 @@ pre:hover .code-copy-btn { opacity: 1; }
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    overflow: hidden;
 }
 
 .agent-name-avatar svg {
