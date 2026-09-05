@@ -93,6 +93,16 @@ On first launch, the script auto-creates a virtual environment, installs Python 
 
 > **Note:** Grok Build launchers (`start_grok.bat`, `start_grok_yolo.bat`) are Windows-only in this release — there is no `macos-linux/start_grok.sh`. You can still `@grok` in chat if a Grok wrapper is already running.
 
+### Grok Build adapter notes
+
+This is a **config-format adapter** on the existing `settings_file` inject path (same registration, heartbeat, identity, and terminal inject as Qwen/Copilot). It is not a separate agent lifecycle.
+
+Current limits:
+
+- MCP is written to the project `.grok/config.toml`. Grok only loads that file after you trust the folder. The wrapper does not grant trust, and it does not delete or restore the file on exit (a restore could overwrite another Grok instance in the same project).
+- Instances in the same project share the MCP URL. The session token is per process (`AGENTCHATTR_MCP_TOKEN`). This adapter does not support pointing two Grok instances at different chat servers in one project.
+- A rewritten config file cannot update env vars of an already-running Grok process. If the instance token rotates, restart Grok.
+
 ---
 
 ## How it works

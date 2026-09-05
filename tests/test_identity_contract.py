@@ -313,7 +313,7 @@ class WrapperLaunchTests(unittest.TestCase):
             self.assertEqual(server["url"], f"http://127.0.0.1:{port}/mcp")
             self.assertTrue(server["enabled"])
             env_var = server.get("bearer_token_env_var")
-            self.assertTrue(env_var, f"bearer_token_env_var missing: {server}")
+            self.assertEqual(env_var, wrapper.GROK_MCP_TOKEN_ENV)
             self.assertNotIn("headers", server)
             self.assertEqual(inject_env.get(env_var), token)
             self.assertNotEqual(env.get(env_var), token)
@@ -331,6 +331,7 @@ class WrapperLaunchTests(unittest.TestCase):
         self.assertEqual(grok["command"], "grok")
         self.assertNotIn("mcp_inject", grok)
         self.assertNotIn("mcp_settings_path", grok)
+        self.assertNotIn("mcp_settings_format", grok)
         self.assertNotIn("mcp_transport", grok)
 
     def test_mcp_identity_maps_grok_build_to_base_grok(self):

@@ -91,12 +91,7 @@ def _write_json_mcp_settings(config_file: Path, url: str, transport: str = "http
 GROK_MCP_TOKEN_ENV = "AGENTCHATTR_MCP_TOKEN"
 
 
-def _write_grok_mcp_toml(
-    config_file: Path,
-    url: str,
-    *,
-    token_env_var: str = GROK_MCP_TOKEN_ENV,
-) -> Path:
+def _write_grok_mcp_toml(config_file: Path, url: str) -> Path:
     """Write/merge Grok-native [mcp_servers.agentchattr] into a TOML config.
 
     Official Grok load path is project `.grok/config.toml`. Only the
@@ -128,7 +123,7 @@ def _write_grok_mcp_toml(
     entry = tomlkit.table()
     entry["url"] = url
     entry["enabled"] = True
-    entry["bearer_token_env_var"] = token_env_var
+    entry["bearer_token_env_var"] = GROK_MCP_TOKEN_ENV
     servers[SERVER_NAME] = entry
 
     dumped = tomlkit.dumps(doc)
@@ -137,7 +132,7 @@ def _write_grok_mcp_toml(
     try:
         parsed = tomllib.loads(dumped)
         got = parsed["mcp_servers"][SERVER_NAME]
-        if got.get("url") != url or got.get("bearer_token_env_var") != token_env_var:
+        if got.get("url") != url or got.get("bearer_token_env_var") != GROK_MCP_TOKEN_ENV:
             raise ValueError("agentchattr block mismatch")
         if not got.get("enabled"):
             raise ValueError("agentchattr not enabled")
@@ -250,19 +245,16 @@ _BUILTIN_DEFAULTS: dict[str, dict] = {
         "mcp_transport": "http",
     },
     "grok": {
-        # Grok-native TOML: [mcp_servers.agentchattr] in project .grok/config.toml.
-        # Grok skips .mcp.json once the Claude import marker is set, so we do
-        # not use Claude/Cursor compat files. Dedicated inject mode — do not
-        # infer this from a generic settings_file .toml suffix.
-        "mcp_inject": "grok_toml",
+        # Same settings_file inject as Qwen/CodeBuddy/Copilot. Format is
+        # explicit — a .toml suffix alone does not select the Grok writer.
+        "mcp_inject": "settings_file",
         "mcp_settings_path": ".grok/config.toml",
+        "mcp_settings_format": "grok_toml",
         "mcp_transport": "http",
     },
 }
 
-_VALID_INJECT_MODES = {
-    "settings_file", "env", "flag", "proxy_flag", "env_content", "grok_toml",
-}
+_VALID_INJECT_MODES = {"settings_file", "env", "flag", "proxy_flag", "env_content"}
 
 
 def _resolve_mcp_inject(agent: str, agent_cfg: dict) -> dict:
@@ -315,8 +307,9 @@ def _apply_mcp_inject(
     http_key = inject_cfg.get("mcp_http_key", "httpUrl")
 
     if mode == "settings_file":
-        # Write a settings JSON file at a user-specified path (e.g. .qwen/settings.json,
-        # or ~/.codebuddy/.mcp.json for user-scope configs).
+        # Write a settings file at a user-specified path (e.g. .qwen/settings.json,
+        # or ~/.codebuddy/.mcp.json for user-scope configs). Format is explicit;
+        # the path suffix is not consulted.
         raw_path = inject_cfg.get("mcp_settings_path", "")
         if not raw_path:
             raise ValueError(f"mcp_inject = 'settings_file' requires mcp_settings_path")
@@ -326,9 +319,20 @@ def _apply_mcp_inject(
         if not target.is_absolute():
             base = Path(project_dir) if project_dir else Path.cwd()
             target = base / target
-        settings_path = _write_json_mcp_settings(target, server_url,
-                                                  transport=transport, token=token,
-                                                  http_key=http_key)
+        fmt = inject_cfg.get("mcp_settings_format") or "json"
+        if fmt == "grok_toml":
+            settings_path = _write_grok_mcp_toml(target, server_url)
+            if token:
+                inject_env[GROK_MCP_TOKEN_ENV] = token
+        elif fmt == "json":
+            settings_path = _write_json_mcp_settings(target, server_url,
+                                                      transport=transport, token=token,
+                                                      http_key=http_key)
+        else:
+            raise ValueError(
+                f"unknown mcp_settings_format {fmt!r} "
+                f"(expected 'json' or 'grok_toml')"
+            )
         # Optionally set an env var pointing to the settings file
         env_var = inject_cfg.get("mcp_env_var")
         if env_var:
@@ -379,21 +383,6 @@ def _apply_mcp_inject(
             server_url, token=token, project_servers=project_servers,
         )
         launch_args = [flag, str(settings_path)]
-
-    elif mode == "grok_toml":
-        # Grok-native project .grok/config.toml. Auth is bearer_token_env_var;
-        # the live token stays in inject_env, not in the file.
-        raw_path = inject_cfg.get("mcp_settings_path", ".grok/config.toml")
-        target = Path(raw_path).expanduser()
-        if not target.is_absolute():
-            base = Path(project_dir) if project_dir else Path.cwd()
-            target = base / target
-        token_env = inject_cfg.get("mcp_token_env_var", GROK_MCP_TOKEN_ENV)
-        settings_path = _write_grok_mcp_toml(
-            target, server_url, token_env_var=token_env,
-        )
-        if token:
-            inject_env[token_env] = token
 
     elif mode == "env_content":
         # Build JSON config content and set it as an env var directly (no file written).
@@ -774,7 +763,9 @@ def main():
             return _identity["token"]
 
     # Rewrite MCP config when token/name changes (e.g. after 409 re-register).
-    # Most CLIs won't re-read mid-session, but the file is correct for next restart.
+    # Most CLIs won't re-read mid-session. Grok auth is an env var on the
+    # already-started process, so a rewritten file cannot refresh in-process
+    # credentials — restart Grok after a token rotation.
     def _rewrite_mcp_config(instance_name: str, new_token: str):
         if not inject_mode or needs_proxy:
             return  # proxy-based agents don't have config files to rewrite

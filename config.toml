@@ -123,7 +123,8 @@ max_size_mb = 10
 # For other CLI agents, set mcp_inject to tell the wrapper how to inject auth:
 #
 # mcp_inject modes:
-#   "settings_file" — write a JSON settings file at mcp_settings_path (merges, not overwrites)
+#   "settings_file" — write a settings file at mcp_settings_path (merges, not overwrites)
+#                     mcp_settings_format = "json" (default) or "grok_toml"
 #   "env"           — write a settings file, expose path via mcp_env_var
 #   "flag"          — write a config file, pass via CLI flag (mcp_flag, default: --mcp-config)
 #   "proxy_flag"    — start a local proxy, pass URL via CLI flag template

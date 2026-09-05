@@ -12,6 +12,7 @@ import threading
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -236,6 +237,149 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
         self.assertIn("mcpServers", data)
         self.assertNotIn("[mcp_servers.agentchattr]", raw)
         self.assertNotIn("bearer_token_env_var", raw)
+
+    def test_settings_file_grok_format_uses_native_toml_writer(self):
+        """Explicit mcp_settings_format=grok_toml (settings_file entry) writes TOML."""
+        target = Path(self.tmp.name) / "proj" / ".grok" / "config.toml"
+        token = "tok-format-" + os.urandom(4).hex()
+        _, _, inject_env, settings_path = _build_provider_launch(
+            agent="customcli",
+            agent_cfg={
+                "mcp_inject": "settings_file",
+                "mcp_settings_path": str(target),
+                "mcp_settings_format": "grok_toml",
+            },
+            instance_name="customcli-1",
+            data_dir=Path(self.tmp.name),
+            proxy_url=None,
+            extra_args=[],
+            env={},
+            token=token,
+            mcp_cfg={"http_port": 8244},
+        )
+        text = settings_path.read_text("utf-8")
+        self.assertNotIn(token, text)
+        payload = tomllib.loads(text)
+        server = payload["mcp_servers"]["agentchattr"]
+        self.assertEqual(server["url"], "http://127.0.0.1:8244/mcp")
+        self.assertEqual(server["bearer_token_env_var"], GROK_MCP_TOKEN_ENV)
+        self.assertEqual(inject_env.get(GROK_MCP_TOKEN_ENV), token)
+
+    def test_quoted_table_header_is_replaced_not_duplicated(self):
+        self.target.parent.mkdir(parents=True)
+        self.target.write_text(
+            '[mcp_servers."agentchattr"]\n'
+            'url = "http://127.0.0.1:1111/mcp"\n'
+            "enabled = true\n",
+            "utf-8",
+        )
+        _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
+        payload = tomllib.loads(self.target.read_text("utf-8"))
+        self.assertEqual(
+            payload["mcp_servers"]["agentchattr"]["url"],
+            "http://127.0.0.1:2222/mcp",
+        )
+        self.assertEqual(list(payload["mcp_servers"]), ["agentchattr"])
+
+    def test_inline_table_on_other_server_is_preserved(self):
+        self.target.parent.mkdir(parents=True)
+        self.target.write_text(
+            "[mcp_servers.other]\n"
+            'url = "http://127.0.0.1:9999/mcp"\n'
+            'headers = { Authorization = "Bearer keep-me" }\n'
+            "[mcp_servers.agentchattr]\n"
+            'url = "http://127.0.0.1:1111/mcp"\n'
+            'headers = { Authorization = "Bearer old-secret" }\n',
+            "utf-8",
+        )
+        _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
+        payload = tomllib.loads(self.target.read_text("utf-8"))
+        other = payload["mcp_servers"]["other"]
+        self.assertEqual(other["headers"]["Authorization"], "Bearer keep-me")
+        server = payload["mcp_servers"]["agentchattr"]
+        self.assertEqual(server["url"], "http://127.0.0.1:2222/mcp")
+        self.assertNotIn("headers", server)
+        self.assertNotIn("old-secret", self.target.read_text("utf-8"))
+
+    def test_unknown_settings_format_is_rejected(self):
+        target = Path(self.tmp.name) / "settings.yaml"
+        with self.assertRaises(ValueError) as cm:
+            _build_provider_launch(
+                agent="customcli",
+                agent_cfg={
+                    "mcp_inject": "settings_file",
+                    "mcp_settings_path": str(target),
+                    "mcp_settings_format": "yaml",
+                },
+                instance_name="customcli-1",
+                data_dir=Path(self.tmp.name),
+                proxy_url=None,
+                extra_args=[],
+                env={},
+                token="tok",
+                mcp_cfg={"http_port": 8244},
+            )
+        self.assertIn("mcp_settings_format", str(cm.exception))
+        self.assertFalse(target.exists())
+
+    def test_json_settings_file_keeps_url_key_and_env_path(self):
+        project = Path(self.tmp.name) / "proj"
+        project.mkdir()
+        token = "json-tok-" + os.urandom(4).hex()
+        _, _, inject_env, settings_path = _build_provider_launch(
+            agent="customcli",
+            agent_cfg={
+                "mcp_inject": "settings_file",
+                "mcp_settings_path": ".qwen/settings.json",
+                "mcp_env_var": "MYCLI_MCP_SETTINGS",
+                "mcp_transport": "http",
+                "mcp_http_key": "url",
+            },
+            instance_name="customcli-1",
+            data_dir=Path(self.tmp.name),
+            proxy_url=None,
+            extra_args=[],
+            env={},
+            token=token,
+            mcp_cfg={"http_port": 8244},
+            project_dir=project,
+        )
+        self.assertEqual(settings_path, project / ".qwen" / "settings.json")
+        self.assertEqual(inject_env["MYCLI_MCP_SETTINGS"], str(settings_path))
+        entry = json.loads(settings_path.read_text("utf-8"))["mcpServers"]["agentchattr"]
+        self.assertEqual(entry["url"], "http://127.0.0.1:8244/mcp")
+        self.assertNotIn("httpUrl", entry)
+        self.assertEqual(entry["headers"]["Authorization"], f"Bearer {token}")
+
+    def test_json_settings_file_expands_tilde_path(self):
+        home = Path(self.tmp.name) / "home"
+
+        def expanduser(p):
+            p = os.fspath(p)
+            if p.startswith("~"):
+                return str(home / p[1:].lstrip("/\\"))
+            return p
+
+        with mock.patch("os.path.expanduser", side_effect=expanduser):
+            _, _, inject_env, settings_path = _build_provider_launch(
+                agent="customcli",
+                agent_cfg={
+                    "mcp_inject": "settings_file",
+                    "mcp_settings_path": "~/.codebuddy/.mcp.json",
+                    "mcp_env_var": "CODEBUDDY_MCP",
+                    "mcp_http_key": "url",
+                },
+                instance_name="customcli-1",
+                data_dir=Path(self.tmp.name),
+                proxy_url=None,
+                extra_args=[],
+                env={},
+                token="tilde-tok",
+                mcp_cfg={"http_port": 8244},
+            )
+        self.assertEqual(settings_path, home / ".codebuddy" / ".mcp.json")
+        self.assertTrue(settings_path.exists())
+        self.assertEqual(inject_env["CODEBUDDY_MCP"], str(settings_path))
 
 
 if __name__ == "__main__":
