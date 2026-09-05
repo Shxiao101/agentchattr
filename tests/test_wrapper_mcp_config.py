@@ -164,6 +164,30 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
         self.assertEqual(server["bearer_token_env_var"], GROK_MCP_TOKEN_ENV)
         self.assertEqual(list(payload["mcp_servers"]), ["agentchattr"])
 
+    def test_spaced_table_header_is_replaced_not_duplicated(self):
+        self.target.parent.mkdir(parents=True)
+        self.target.write_text(
+            "[ mcp_servers.agentchattr ]\n"
+            'url = "http://127.0.0.1:1111/mcp"\n'
+            "enabled = true\n",
+            "utf-8",
+        )
+        _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
+        payload = tomllib.loads(self.target.read_text("utf-8"))
+        self.assertEqual(
+            payload["mcp_servers"]["agentchattr"]["url"],
+            "http://127.0.0.1:2222/mcp",
+        )
+        self.assertEqual(list(payload["mcp_servers"]), ["agentchattr"])
+
+    def test_invalid_existing_toml_is_not_overwritten(self):
+        self.target.parent.mkdir(parents=True)
+        garbage = "this is not toml [[[\n"
+        self.target.write_text(garbage, "utf-8")
+        with self.assertRaises(ValueError):
+            _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
+        self.assertEqual(self.target.read_text("utf-8"), garbage)
+
     def test_generic_settings_file_toml_is_not_grok_writer(self):
         """A custom settings_file path ending in .toml must stay JSON, not Grok TOML."""
         target = Path(self.tmp.name) / "custom.toml"

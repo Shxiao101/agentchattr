@@ -25,7 +25,11 @@ import shutil
 import sys
 import threading
 import time
+import tomllib
 from pathlib import Path
+
+import tomlkit
+from tomlkit.exceptions import TOMLKitError
 
 ROOT = Path(__file__).parent
 
@@ -83,35 +87,6 @@ def _write_json_mcp_settings(config_file: Path, url: str, transport: str = "http
     return config_file
 
 
-def _toml_escape(value: str) -> str:
-    """Escape a string for a TOML basic (double-quoted) string."""
-    return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _strip_toml_tables(text: str, table_name: str) -> str:
-    """Remove [table_name] and [table_name.*] tables from TOML text.
-
-    Merge-only helper: other tables (including sibling [mcp_servers.<other>])
-    are left untouched, including their comments.
-    """
-    if not text:
-        return ""
-    exact = f"[{table_name}]"
-    prefix = f"[{table_name}."
-    out: list[str] = []
-    skipping = False
-    for line in text.splitlines(keepends=True):
-        stripped = line.lstrip()
-        if stripped.startswith("["):
-            end = stripped.find("]")
-            if end != -1:
-                header = stripped[: end + 1]
-                skipping = header == exact or header.startswith(prefix)
-        if not skipping:
-            out.append(line)
-    return "".join(out).rstrip()
-
-
 GROK_MCP_TOKEN_ENV = "AGENTCHATTR_MCP_TOKEN"
 
 
@@ -127,24 +102,50 @@ def _write_grok_mcp_toml(
     agentchattr server block is replaced; unrelated [mcp_servers.*] tables
     are preserved. Auth is Grok's bearer_token_env_var (no live token in
     the file). The wrapper puts the instance token in inject_env.
+
+    Existing files are parsed with tomlkit so dotted/spaced/quoted table
+    headers round-trip as the same key. Unreadable or invalid TOML is not
+    treated as empty (that would wipe the file and append a duplicate).
     """
     config_file.parent.mkdir(parents=True, exist_ok=True)
-    existing = ""
     if config_file.exists():
+        existing = config_file.read_text("utf-8")
         try:
-            existing = config_file.read_text("utf-8")
-        except Exception:
-            existing = ""
-    body = _strip_toml_tables(existing, f"mcp_servers.{SERVER_NAME}")
-    lines = [
-        f"[mcp_servers.{SERVER_NAME}]",
-        f'url = "{_toml_escape(url)}"',
-        "enabled = true",
-        f'bearer_token_env_var = "{_toml_escape(token_env_var)}"',
-    ]
-    block = "\n".join(lines) + "\n"
-    text = (body + "\n\n" + block) if body else block
-    config_file.write_text(text, "utf-8")
+            doc = tomlkit.parse(existing)
+        except TOMLKitError as exc:
+            raise ValueError(
+                f"Refusing to overwrite invalid Grok config {config_file}: {exc}"
+            ) from exc
+    else:
+        doc = tomlkit.document()
+
+    servers = doc.get("mcp_servers")
+    if not isinstance(servers, dict):
+        servers = tomlkit.table()
+        doc["mcp_servers"] = servers
+
+    entry = tomlkit.table()
+    entry["url"] = url
+    entry["enabled"] = True
+    entry["bearer_token_env_var"] = token_env_var
+    servers[SERVER_NAME] = entry
+
+    dumped = tomlkit.dumps(doc)
+    if dumped and not dumped.endswith("\n"):
+        dumped += "\n"
+    try:
+        parsed = tomllib.loads(dumped)
+        got = parsed["mcp_servers"][SERVER_NAME]
+        if got.get("url") != url or got.get("bearer_token_env_var") != token_env_var:
+            raise ValueError("agentchattr block mismatch")
+        if not got.get("enabled"):
+            raise ValueError("agentchattr not enabled")
+    except Exception as exc:
+        raise ValueError(f"Grok TOML failed validation before write: {exc}") from exc
+
+    tmp = config_file.with_name(config_file.name + ".tmp")
+    tmp.write_text(dumped, "utf-8")
+    tmp.replace(config_file)
     return config_file
 
 

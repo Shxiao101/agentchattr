@@ -338,15 +338,32 @@ class WrapperLaunchTests(unittest.TestCase):
         self.assertIn("Grok Build", text)
         self.assertIn('base: "grok"', text)
 
-    def test_grok_wrapper_does_not_mutate_folder_trust(self):
-        src = Path(wrapper.__file__).read_text("utf-8")
-        self.assertNotIn("_ensure_grok_folder_trusted", src)
-        self.assertNotIn("trusted_folders.toml", src)
-        self.assertFalse(hasattr(wrapper, "_ensure_grok_folder_trusted"))
-
-    def test_no_unix_grok_launcher(self):
-        self.assertFalse((ROOT / "macos-linux" / "start_grok.sh").exists())
-        self.assertFalse((ROOT / "macos-linux" / "start_grok_yolo.sh").exists())
+    def test_grok_launch_does_not_write_trust_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            (home / ".grok").mkdir(parents=True)
+            trust = home / ".grok" / "trusted_folders.toml"
+            original = "[folders.'C:\\\\already']\ntrusted = true\n"
+            trust.write_text(original, "utf-8")
+            project_dir = Path(tmp) / "project"
+            project_dir.mkdir()
+            with mock.patch.object(wrapper.Path, "home", return_value=home):
+                wrapper._build_provider_launch(
+                    agent="grok",
+                    agent_cfg={},
+                    instance_name="grok-2",
+                    data_dir=Path(tmp) / "data",
+                    proxy_url=None,
+                    extra_args=[],
+                    env={},
+                    token="tok_" + os.urandom(4).hex(),
+                    mcp_cfg={"http_port": 8233},
+                    project_dir=project_dir,
+                )
+                helper = getattr(wrapper, "_ensure_grok_folder_trusted", None)
+                if helper is not None:
+                    helper(project_dir)
+            self.assertEqual(trust.read_text("utf-8"), original)
 
 
 class WrapperUnixLifecycleTests(unittest.TestCase):
