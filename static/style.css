@@ -725,13 +725,6 @@ main#timeline {
     height: 18px;
 }
 
-.avatar svg.avatar-fill,
-.avatar img.avatar-fill {
-    width: 32px;
-    height: 32px;
-    display: block;
-}
-
 /* --- Hat overlay --- */
 
 .hat-overlay {
@@ -2736,13 +2729,6 @@ pre:hover .code-copy-btn { opacity: 1; }
 .agent-name-avatar svg {
     width: 22px;
     height: 22px;
-}
-
-.agent-name-avatar svg.avatar-fill,
-.agent-name-avatar img.avatar-fill {
-    width: 40px;
-    height: 40px;
-    display: block;
 }
 
 .agent-name-title {

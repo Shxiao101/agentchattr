@@ -610,7 +610,7 @@ Available models: `MiniMax-M3` (default), `MiniMax-M2.7`, `MiniMax-M2.7-highspee
 - **Windows**: no extra dependencies
 - **Mac/Linux**: `tmux` (for auto-trigger — `brew install tmux` or `apt install tmux`)
 
-Python package dependencies (`fastapi`, `uvicorn`, `mcp`) are listed in `requirements.txt`. The quickstart scripts automatically create a virtual environment and install these on first launch — no manual `pip install` needed.
+Python package dependencies (`fastapi`, `uvicorn`, `mcp`, `tomlkit`) are listed in `requirements.txt`. `tomlkit` is required to merge Grok-native MCP TOML without dropping comments or duplicating tables. The quickstart scripts automatically create a virtual environment and install these on first launch — no manual `pip install` needed.
 
 ## Platform notes
 
