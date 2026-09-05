@@ -193,6 +193,23 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
     def test_concurrent_writes_do_not_share_temp_file(self):
         self.target.parent.mkdir(parents=True)
         errors: list[BaseException] = []
+        n = 8
+        # Hold every writer at its first os.replace so unique temps exist
+        # together. A shared config.toml.tmp then fails FileNotFoundError
+        # instead of depending on a natural race.
+        barrier = threading.Barrier(n)
+        first_temps: list[str] = []
+        lock = threading.Lock()
+        waited = threading.local()
+        real_replace = os.replace
+
+        def gated_replace(src, dst, *args, **kwargs):
+            if not getattr(waited, "done", False):
+                waited.done = True
+                with lock:
+                    first_temps.append(os.path.normpath(str(src)))
+                barrier.wait(timeout=5)
+            return real_replace(src, dst, *args, **kwargs)
 
         def worker(i: int) -> None:
             try:
@@ -202,12 +219,17 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        with mock.patch("wrapper.os.replace", gated_replace):
+            threads = [
+                threading.Thread(target=worker, args=(i,)) for i in range(n)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
         self.assertEqual(errors, [])
+        self.assertEqual(len(first_temps), n)
+        self.assertEqual(len(set(first_temps)), n, first_temps)
         payload = tomllib.loads(self.target.read_text("utf-8"))
         self.assertIn("agentchattr", payload["mcp_servers"])
         self.assertTrue(payload["mcp_servers"]["agentchattr"]["enabled"])
@@ -321,6 +343,30 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
             )
         self.assertIn("mcp_settings_format", str(cm.exception))
         self.assertFalse(target.exists())
+
+    def test_blank_settings_format_is_not_json_default(self):
+        """Explicit empty/false format must not fall through to JSON."""
+        for i, bad in enumerate(("", False)):
+            with self.subTest(fmt=bad):
+                target = Path(self.tmp.name) / f"blank-format-{i}.json"
+                with self.assertRaises(ValueError) as cm:
+                    _build_provider_launch(
+                        agent="customcli",
+                        agent_cfg={
+                            "mcp_inject": "settings_file",
+                            "mcp_settings_path": str(target),
+                            "mcp_settings_format": bad,
+                        },
+                        instance_name="customcli-1",
+                        data_dir=Path(self.tmp.name),
+                        proxy_url=None,
+                        extra_args=[],
+                        env={},
+                        token="tok",
+                        mcp_cfg={"http_port": 8244},
+                    )
+                self.assertIn("mcp_settings_format", str(cm.exception))
+                self.assertFalse(target.exists())
 
     def test_json_settings_file_keeps_url_key_and_env_path(self):
         project = Path(self.tmp.name) / "proj"

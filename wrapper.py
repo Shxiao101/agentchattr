@@ -319,7 +319,7 @@ def _apply_mcp_inject(
         if not target.is_absolute():
             base = Path(project_dir) if project_dir else Path.cwd()
             target = base / target
-        fmt = inject_cfg.get("mcp_settings_format") or "json"
+        fmt = inject_cfg.get("mcp_settings_format", "json")
         if fmt == "grok_toml":
             settings_path = _write_grok_mcp_toml(target, server_url)
             if token:
