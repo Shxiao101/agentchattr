@@ -360,9 +360,6 @@ class WrapperLaunchTests(unittest.TestCase):
                     mcp_cfg={"http_port": 8233},
                     project_dir=project_dir,
                 )
-                helper = getattr(wrapper, "_ensure_grok_folder_trusted", None)
-                if helper is not None:
-                    helper(project_dir)
             self.assertEqual(trust.read_text("utf-8"), original)
 
 

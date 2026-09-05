@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import tomllib
 import unittest
 from pathlib import Path
@@ -187,6 +188,28 @@ class GrokTomlMcpSettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _write_grok_mcp_toml(self.target, "http://127.0.0.1:2222/mcp")
         self.assertEqual(self.target.read_text("utf-8"), garbage)
+
+    def test_concurrent_writes_do_not_share_temp_file(self):
+        self.target.parent.mkdir(parents=True)
+        errors: list[BaseException] = []
+
+        def worker(i: int) -> None:
+            try:
+                _write_grok_mcp_toml(
+                    self.target, f"http://127.0.0.1:{8100 + i}/mcp"
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        payload = tomllib.loads(self.target.read_text("utf-8"))
+        self.assertIn("agentchattr", payload["mcp_servers"])
+        self.assertTrue(payload["mcp_servers"]["agentchattr"]["enabled"])
 
     def test_generic_settings_file_toml_is_not_grok_writer(self):
         """A custom settings_file path ending in .toml must stay JSON, not Grok TOML."""

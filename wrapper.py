@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import threading
 import time
 import tomllib
@@ -143,9 +144,32 @@ def _write_grok_mcp_toml(
     except Exception as exc:
         raise ValueError(f"Grok TOML failed validation before write: {exc}") from exc
 
-    tmp = config_file.with_name(config_file.name + ".tmp")
-    tmp.write_text(dumped, "utf-8")
-    tmp.replace(config_file)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{config_file.name}.",
+        suffix=".tmp",
+        dir=str(config_file.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(dumped)
+        deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                os.replace(tmp_name, config_file)
+                break
+            except PermissionError:
+                # Windows can deny replace while another instance is reading
+                # the destination. Unique tmp files already avoid sharing
+                # config.toml.tmp; retry briefly instead of failing startup.
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.02)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     return config_file
 
 
