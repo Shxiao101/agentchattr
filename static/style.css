@@ -217,7 +217,8 @@ header h1 {
 
 .subtitle {
     font-size: 12px;
-    color: var(--text-dim);
+    font-weight: 500;
+    color: var(--text);
 }
 
 .header-right {
@@ -3600,6 +3601,7 @@ footer {
 }
 
 .sched-recurring-fields.hidden { display: none; }
+.sched-relative-fields.hidden { display: none; }
 
 .sched-pop-error {
     font-size: 11px;
